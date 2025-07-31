@@ -1,0 +1,224 @@
+# Dockerfile for Spring Boot Backend
+FROM openjdk:17-jdk-slim
+
+WORKDIR /app
+
+COPY target/taskmanager-0.0.1-SNAPSHOT.jar app.jar
+
+EXPOSE 8080
+
+CMD ["java", "-jar", "app.jar"]
+
+# Dockerfile for React Frontend  
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=0 /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+
+# nginx.conf
+server {
+    listen 80;
+    server_name localhost;
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://backend:8080/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# docker-compose.yml
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080/api
+
+# railway.json (for Railway deployment)
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+
+# render.yaml (for Render deployment)
+services:
+  - type: web
+    name: taskmanager-backend
+    env: java
+    buildCommand: mvn clean package -DskipTests
+    startCommand: java -jar target/taskmanager-0.0.1-SNAPSHOT.jar
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: SPRING_PROFILES_ACTIVE
+        value: production
+
+  - type: web
+    name: taskmanager-frontend
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://your-backend-url.onrender.com/api
+
+# .env.example (for frontend)
+REACT_APP_API_URL=http://localhost:8080/api
+
+# README.md
+# Task Manager Full Stack Application
+
+A modern task management application built with Spring Boot (Java) backend and React frontend.
+
+## Features
+
+- ✅ Create, read, update, and delete tasks
+- 🏷️ Task status management (TODO, IN_PROGRESS, COMPLETED)
+- 🎯 Priority levels (LOW, MEDIUM, HIGH)
+- 🔍 Search and filter functionality
+- 📱 Responsive design
+- 🎨 Modern UI with smooth animations
+
+## Tech Stack
+
+### Backend
+- Java 17
+- Spring Boot 3.2.0
+- Spring Data JPA
+- H2 Database (can be switched to PostgreSQL/MySQL)
+- Maven
+
+### Frontend
+- React 18
+- Axios for API calls
+- Modern CSS with Grid and Flexbox
+- Responsive design
+
+## Local Development
+
+### Prerequisites
+- Java 17+
+- Node.js 18+
+- Maven 3.6+
+
+### Backend Setup
+```bash
+cd backend
+mvn spring-boot:run
+```
+The backend will run on http://localhost:8080
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm start
+```
+The frontend will run on http://localhost:3000
+
+## Deployment Options
+
+### 1. Heroku (Free tier available)
+- Deploy backend as Java app
+- Deploy frontend as static site
+- Use Heroku Postgres addon for production database
+
+### 2. Railway (Free tier available)
+- Import from GitHub
+- Automatic builds and deployments
+- Built-in database options
+
+### 3. Render (Free tier available)
+- Web services for both frontend and backend
+- PostgreSQL database included
+- Automatic SSL certificates
+
+### 4. Vercel + Railway
+- Frontend on Vercel (free)
+- Backend on Railway (free tier)
+
+### 5. Docker Deployment
+```bash
+docker-compose up -d
+```
+
+## API Endpoints
+
+- GET /api/tasks - Get all tasks
+- POST /api/tasks - Create a new task
+- PUT /api/tasks/{id} - Update a task
+- DELETE /api/tasks/{id} - Delete a task
+- GET /api/tasks/status/{status} - Get tasks by status
+- GET /api/tasks/search?title={query} - Search tasks
+
+## Database Schema
+
+### Task Entity
+- id (Long) - Primary key
+- title (String) - Task title (required, max 100 chars)
+- description (String) - Task description (max 500 chars)
+- status (Enum) - TODO, IN_PROGRESS, COMPLETED
+- priority (Enum) - LOW, MEDIUM, HIGH
+- createdAt (LocalDateTime) - Creation timestamp
+- updatedAt (LocalDateTime) - Last update timestamp
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+
+MIT License
